@@ -5,6 +5,7 @@
 A Python data-processing pipeline that builds a cleaned, assignment-ready list of associates for a pick shift.
 
 **Flow:**
+
 1. Load shift attendance → filter to the 18:30–23:00 window → deduplicate
 2. Merge attendance with `pick_reach_final.csv` to get each person's process path (Pick/Reach) and JPH (jobs per hour)
 3. Remove VTO (Voluntary Time Off) employees
@@ -14,23 +15,23 @@ A Python data-processing pipeline that builds a cleaned, assignment-ready list o
 
 ## Input Files
 
-| File | Source | Purpose |
-|------|--------|---------|
-| `Attendance.csv` | Downloaded from shift schedule system | Raw attendance with Alias, Name, Shift Start |
-| `pick_reach_final.csv` | Maintained manually | Maps Names → Path (Pick/Reach) + JPH rating |
-| `VTO.csv` | Daily VTO list | Employee logins to exclude from planning |
-| `in_house.csv` | TBD | (purpose to be documented) |
-| `HMW1 Master Trained List(Center rider).csv` | TBD | Master trained associate list |
+| File                                         | Source                                | Purpose                                      |
+| -------------------------------------------- | ------------------------------------- | -------------------------------------------- |
+| `Attendance.csv`                             | Downloaded from shift schedule system | Raw attendance with Alias, Name, Shift Start |
+| `pick_reach_final.csv`                       | Maintained manually                   | Maps Names → Path (Pick/Reach) + JPH rating  |
+| `VTO.csv`                                    | Daily VTO list                        | Employee logins to exclude from planning     |
+| `in_house.csv`                               | TBD                                   | (purpose to be documented)                   |
+| `HMW1 Master Trained List(Center rider).csv` | TBD                                   | Master trained associate list                |
 
 ---
 
 ## Output Files (Generated)
 
-| File | Contents |
-|------|----------|
-| `attendance_cleaned.csv` | Filtered + deduplicated attendance (Section 1 output) |
-| `attendance_with_pick_reach.csv` | Attendance merged with path/JPH data (Section 2 output) |
-| `attendance_without_vto.csv` | Final list with VTO associates removed, sorted by Path (Section 3 output) |
+| File                             | Contents                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `attendance_cleaned.csv`         | Filtered + deduplicated attendance (Section 1 output)                     |
+| `attendance_with_pick_reach.csv` | Attendance merged with path/JPH data (Section 2 output)                   |
+| `attendance_without_vto.csv`     | Final list with VTO associates removed, sorted by Path (Section 3 output) |
 
 ---
 
@@ -53,10 +54,10 @@ A Python data-processing pipeline that builds a cleaned, assignment-ready list o
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-05-16 | Initial project setup; script.py has all 3 sections working end-to-end |
-| 2026-05-16 | Created `streamlit_app/` folder with full single-page Streamlit app (app.py + requirements.txt) |
+| Date       | Change                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------ |
+| 2026-05-16 | Initial project setup; script.py has all 3 sections working end-to-end                                       |
+| 2026-05-16 | Created `streamlit_app/` folder with full single-page Streamlit app (app.py + requirements.txt)              |
 | 2026-05-16 | Restructured to multi-page app: app.py is now the nav entry point; each page lives in `streamlit_app/pages/` |
 
 ---
