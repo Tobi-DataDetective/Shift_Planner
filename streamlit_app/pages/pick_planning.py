@@ -29,7 +29,7 @@ def load_pick_reach(path: str) -> pd.DataFrame:
 
 ALIAS_CANDS = ["alias", "employee login", "login", "emp id", "employee id", "associate login"]
 NAME_CANDS  = ["name", "names", "full name", "employee name", "associate name"]
-SHIFT_CANDS = ["shift start", "start time", "start", "shift begin", "scheduled start"]
+SHIFT_CANDS = ["schedule start time", "schedule start", "shift start", "start time", "start", "shift begin", "scheduled start"]
 VTO_CANDS   = ["employee login", "alias", "login", "emp id", "employee id", "associate login"]
 
 # ── Sidebar — database status ─────────────────────────────────────────────────
@@ -59,9 +59,9 @@ upload_col, time_col = st.columns([1, 1])
 
 with upload_col:
     attendance_file = st.file_uploader(
-        "Upload Attendance file (CSV)",
+        "Upload Roster file (CSV)",
         type=["csv"],
-        help="Raw shift-schedule export. Column names are auto-detected.",
+        help="Roster export (e.g. HMW1_roster_…csv). Expected columns: Employee Login, Employee Name, Schedule Start Time. Column names are auto-detected.",
     )
 
 with time_col:
@@ -75,7 +75,7 @@ if attendance_file:
     raw_att = pd.read_csv(attendance_file)
     raw_att.columns = raw_att.columns.str.strip()
 
-    with st.expander("Raw attendance columns detected"):
+    with st.expander("Raw roster columns detected"):
         st.write(list(raw_att.columns))
 
     alias_col = _find_col(raw_att, ALIAS_CANDS)
@@ -99,7 +99,10 @@ if attendance_file:
             shift_col: "Shift Start",
         })
 
-        att["Shift Start"] = pd.to_datetime(att["Shift Start"], errors="coerce")
+        # Try roster format "May 17 18:30" first, fall back to generic ISO for older exports
+        parsed_specific = pd.to_datetime(att["Shift Start"], format="%b %d %H:%M", errors="coerce")
+        parsed_generic  = pd.to_datetime(att["Shift Start"], errors="coerce")
+        att["Shift Start"] = parsed_specific.fillna(parsed_generic)
         att = att.dropna(subset=["Shift Start"])
         att["Shift Time"] = att["Shift Start"].dt.time
 

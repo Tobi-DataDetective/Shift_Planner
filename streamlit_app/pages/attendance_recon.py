@@ -120,7 +120,8 @@ try:
     db_login_col = _find_col(db_df, ["login", "alias", "employee login"])
     if db_name_col and db_login_col:
         db_df["_key"] = _norm_name(db_df[db_name_col])
-        db_login_map = db_df.set_index("_key")[db_login_col].to_dict()
+        # Cast to str so map() always returns strings, never int64
+        db_login_map = db_df.set_index("_key")[db_login_col].astype(str).to_dict()
 except FileNotFoundError:
     pass  # login lookup simply won't populate for in-building group
 
@@ -128,8 +129,9 @@ except FileNotFoundError:
 in_building = in_house_names[
     ~in_house_names["_key"].isin(attendance_names["_key"])
 ].copy()
-in_building["Login"]  = in_building["_key"].map(db_login_map)
-in_building["Status"] = "In Building – Not on Shift"
+# map() returns NaN (float64) for missing keys — cast to object to avoid dtype clash on concat
+in_building["Login"]  = in_building["_key"].map(db_login_map).astype(object)
+in_building["Status"] = "Present – Not on Shift"
 in_building = in_building[["Names", "Login", "Status"]]
 
 absent = attendance_names[
@@ -138,19 +140,21 @@ absent = attendance_names[
 absent["Status"] = "Absent – On Shift Schedule"
 if "Login" not in absent.columns:
     absent["Login"] = None
+# Cast Login to object so the dtype matches in_building before concat
+absent["Login"] = absent["Login"].astype(object)
 absent = absent[["Names", "Login", "Status"]]
 
-reconciliation_df = pd.concat([in_building, absent]).reset_index(drop=True)
+reconciliation_df = pd.concat([in_building, absent], ignore_index=True)
 
 # ── Results ───────────────────────────────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
-col1.metric("In-House headcount",  len(in_house_names))
-col2.metric("On-shift headcount",  len(attendance_names))
-col3.metric("Discrepancies found", len(reconciliation_df))
+col1.metric("In-House Headcount",          len(in_house_names))
+col2.metric("Absent – On Shift Schedule",  len(absent))
+col3.metric("Present – Not on Shift",      len(in_building))
 
 tab1, tab2, tab3 = st.tabs([
     f"All discrepancies ({len(reconciliation_df)})",
-    f"In Building – Not on Shift ({len(in_building)})",
+    f"Present – Not on Shift ({len(in_building)})",
     f"Absent – On Shift Schedule ({len(absent)})",
 ])
 
