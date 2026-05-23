@@ -40,7 +40,7 @@ def parse_voice_pick(raw_data: str) -> pd.DataFrame:
         if i + 8 >= len(lines):
             break
 
-        serial, login, warehouse, date = lines[i], lines[i+1], lines[i+2], lines[i+3]
+        _, login, warehouse, date = lines[i], lines[i+1], lines[i+2], lines[i+3]
         uttering, correct, scan, check, util = (
             lines[i+4], lines[i+5], lines[i+6], lines[i+7], lines[i+8]
         )
