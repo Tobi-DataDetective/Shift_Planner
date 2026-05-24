@@ -3,8 +3,12 @@ import pandas as pd
 import datetime
 import os
 
-BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
-DB_PATH       = os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+_data_dir = os.environ.get("SHIFT_PLANNER_DATA")
+DB_PATH   = (
+    os.path.join(_data_dir, "HMW1_Master_Combined_Paths.csv") if _data_dir
+    else os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+)
 
 
 def _find_col(df: pd.DataFrame, candidates: list) -> str | None:
@@ -16,8 +20,14 @@ def _find_col(df: pd.DataFrame, candidates: list) -> str | None:
 
 
 def _norm_name(series: pd.Series) -> pd.Series:
-    """Uppercase, strip spaces, and normalise spaces around commas for matching."""
     return series.astype(str).str.strip().str.upper().str.replace(r"\s*,\s*", ",", regex=True)
+
+
+def _clean(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in out.columns:
+        out[col] = out[col].fillna("").astype(str)
+    return out
 
 
 # ── Page ─────────────────────────────────────────────────────────────────────
@@ -59,9 +69,6 @@ if not in_house_file or not pick_plan_file:
 in_house_raw = pd.read_csv(in_house_file)
 in_house_raw.columns = in_house_raw.columns.str.strip()
 
-with st.expander("In-House columns detected"):
-    st.write(list(in_house_raw.columns))
-
 in_house_name_col = _find_col(
     in_house_raw,
     ["employee name", "name", "names", "associate name", "full name"],
@@ -78,9 +85,6 @@ if not in_house_name_col:
 pick_plan_raw = pd.read_csv(pick_plan_file)
 pick_plan_raw.columns = pick_plan_raw.columns.str.strip()
 
-with st.expander("Pick Plan columns detected"):
-    st.write(list(pick_plan_raw.columns))
-
 pick_plan_name_col  = _find_col(pick_plan_raw, ["names", "name", "employee name", "associate name", "full name"])
 pick_plan_login_col = _find_col(pick_plan_raw, ["alias", "login", "employee login", "emp login"])
 
@@ -91,6 +95,8 @@ if not pick_plan_name_col:
     )
     st.stop()
 
+st.success(f"Files loaded: **{in_house_file.name}** and **{pick_plan_file.name}**")
+
 # ── Build name + login sets ───────────────────────────────────────────────────
 in_house_names = (
     in_house_raw[[in_house_name_col]]
@@ -100,7 +106,6 @@ in_house_names = (
 )
 in_house_names["_key"] = _norm_name(in_house_names["Names"])
 
-# Pick plan: keep Names and Alias (login) if available
 pp_cols = [pick_plan_name_col]
 if pick_plan_login_col:
     pp_cols.append(pick_plan_login_col)
@@ -111,7 +116,7 @@ if pick_plan_login_col:
     attendance_names.rename(columns={pick_plan_login_col: "Login"}, inplace=True)
 attendance_names["_key"] = _norm_name(attendance_names["Names"])
 
-# ── Login lookup table from database (for In-Building group) ─────────────────
+# ── Login lookup from database ────────────────────────────────────────────────
 db_login_map: dict[str, str] = {}
 try:
     db_df = pd.read_csv(DB_PATH)
@@ -120,60 +125,54 @@ try:
     db_login_col = _find_col(db_df, ["login", "alias", "employee login"])
     if db_name_col and db_login_col:
         db_df["_key"] = _norm_name(db_df[db_name_col])
-        # Cast to str so map() always returns strings, never int64
         db_login_map = db_df.set_index("_key")[db_login_col].astype(str).to_dict()
 except FileNotFoundError:
-    pass  # login lookup simply won't populate for in-building group
+    pass
 
-# ── Reconciliation ────────────────────────────────────────────────────────────
-in_building = in_house_names[
-    ~in_house_names["_key"].isin(attendance_names["_key"])
-].copy()
-# map() returns NaN (float64) for missing keys — cast to object to avoid dtype clash on concat
-in_building["Login"]  = in_building["_key"].map(db_login_map).astype(object)
-in_building["Status"] = "Present – Not Scheduled"
-in_building = in_building[["Names", "Login", "Status"]]
+# ── Build each group ──────────────────────────────────────────────────────────
+_ib = in_house_names[~in_house_names["_key"].isin(attendance_names["_key"])].copy()
+_ib["Login"]  = _ib["_key"].map(db_login_map).fillna("").astype(str)
+_ib["Status"] = "Present – Not Scheduled"
+in_building = _clean(_ib[["Names", "Login", "Status"]])
 
-absent = attendance_names[
-    ~attendance_names["_key"].isin(in_house_names["_key"])
-].copy()
-absent["Status"] = "Absent – Scheduled"
-if "Login" not in absent.columns:
-    absent["Login"] = None
-# Cast Login to object so the dtype matches in_building before concat
-absent["Login"] = absent["Login"].astype(object)
-absent = absent[["Names", "Login", "Status"]]
+_ab = attendance_names[~attendance_names["_key"].isin(in_house_names["_key"])].copy()
+_ab["Status"] = "Absent – Scheduled"
+if "Login" not in _ab.columns:
+    _ab["Login"] = ""
+absent = _clean(_ab[["Names", "Login", "Status"]])
 
-reconciliation_df = pd.concat([in_building, absent], ignore_index=True)
+all_df = pd.concat([in_building, absent], ignore_index=True)
 
-# ── Results ───────────────────────────────────────────────────────────────────
+# ── Metrics ───────────────────────────────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
-col1.metric("In-House Headcount",          len(in_house_names))
+col1.metric("In-House Headcount",      len(in_house_names))
 col2.metric("Absent – Scheduled",      len(absent))
 col3.metric("Present – Not Scheduled", len(in_building))
 
-tab1, tab2, tab3 = st.tabs([
-    f"All discrepancies ({len(reconciliation_df)})",
-    f"Present – Not Scheduled ({len(in_building)})",
-    f"Absent – Scheduled ({len(absent)})",
-])
+st.markdown("---")
 
-with tab1:
-    st.dataframe(reconciliation_df, use_container_width=True)
+# ── Filter ────────────────────────────────────────────────────────────────────
+filter_options = ["All", "Present – Not Scheduled", "Absent – Scheduled"]
+selected_filter = st.radio(
+    "Filter by status",
+    options=filter_options,
+    horizontal=True,
+)
 
-with tab2:
-    st.markdown("These associates are in the building but are **not on the shift schedule**.")
-    st.dataframe(in_building, use_container_width=True)
+if selected_filter == "All":
+    display_df = all_df
+elif selected_filter == "Present – Not Scheduled":
+    display_df = in_building
+else:
+    display_df = absent
 
-with tab3:
-    st.markdown("These associates are on the shift schedule but are **not showing as in the building**.")
-    st.dataframe(absent, use_container_width=True)
+st.dataframe(display_df, use_container_width=True)
 
 # ── Download ──────────────────────────────────────────────────────────────────
 st.markdown("---")
-csv_bytes = reconciliation_df.to_csv(index=False).encode("utf-8")
+csv_bytes = display_df.to_csv(index=False).encode("utf-8")
 st.download_button(
-    label="Download Reconciliation Report (CSV)",
+    label="Download Report (CSV)",
     data=csv_bytes,
     file_name=f"attendance_reconciliation_{datetime.date.today()}.csv",
     mime="text/csv",

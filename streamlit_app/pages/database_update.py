@@ -3,8 +3,12 @@ import pandas as pd
 import os
 import datetime
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH  = os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+_data_dir = os.environ.get("SHIFT_PLANNER_DATA")
+DB_PATH   = (
+    os.path.join(_data_dir, "HMW1_Master_Combined_Paths.csv") if _data_dir
+    else os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+)
 
 PATH_ORDER = ["CR", "Reach", "Forks", "Clamp", "EPJ", "GTDR"]
 
@@ -140,15 +144,20 @@ if "db_result" in st.session_state:
     multi = result[result["Path"].str.contains("_")]
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total employees", len(result))
-    col2.metric("Multi-path employees", len(multi))
-    col3.metric("Paths included", len(uploaded))
+    col1.metric("Total Associates",       len(result))
+    col2.metric("Multi-path Associates",  len(multi))
+    col3.metric("Paths included",         len(uploaded))
 
-    tab1, tab2 = st.tabs(["All employees", "Multi-path employees"])
-    with tab1:
-        st.dataframe(result, use_container_width=True)
-    with tab2:
-        st.dataframe(multi, use_container_width=True)
+    st.markdown("---")
+
+    selected_filter = st.radio(
+        "Filter by",
+        options=["All Associates", "Multi-path Associates"],
+        horizontal=True,
+    )
+
+    display_df = result if selected_filter == "All Associates" else multi
+    st.dataframe(display_df, use_container_width=True)
 
     st.markdown("---")
     dl_col, save_col = st.columns([1, 1])

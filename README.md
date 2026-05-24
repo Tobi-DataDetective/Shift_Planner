@@ -5,10 +5,10 @@ A Streamlit web app for managing a pick shift at an Amazon warehouse. It takes a
 ## What it does
 
 - **Pick Planning** — uploads the shift roster, filters by shift window, assigns associates to process paths (CR, Reach, Forks, Clamp, EPJ, GTDR) using a master database, and removes VTO employees. Outputs a downloadable pick plan CSV.
-- **Attendance Reconciliation** — compares who is physically in the building (time-off-task report) against who is on the shift schedule and flags discrepancies in both directions.
+- **Attendance Reconciliation** — compares who is physically in the building (time-off-task report) against who is on the shift schedule. Displays a single combined table with a radio filter to view **All**, **Present – Not Scheduled**, or **Absent – Scheduled** associates.
 - **Voice Pick** — parses raw voice pick export text and reports utilization metrics, highlighting associates below 70%.
 - **Equipment Utilization** — looks up the last operator for any piece of equipment by its number.
-- **Database Update** — rebuilds the master associate database (`HMW1_Master_Combined_Paths.csv`) from per-path trained-list exports without overwriting unrelated certifications.
+- **Database Update** — rebuilds the master associate database (`HMW1_Master_Combined_Paths.csv`) from per-path trained-list exports. Displays all associates in a single table with a radio filter for **All Associates** or **Multi-path Associates** only.
 
 ## Key files
 
@@ -97,7 +97,8 @@ The app will open automatically in your browser at `http://localhost:8501`.
 ### Attendance Reconciliation
 1. Export the time-off-task report (`timeOffTask-ppr-HMW1-*.csv`).
 2. Go to **Attendance Reconciliation** and upload both the time-off-task report and the pick plan CSV from the step above.
-3. Review who is absent but scheduled and who is present but not scheduled.
+3. Use the radio filter to view **All**, **Present – Not Scheduled**, or **Absent – Scheduled** associates.
+4. Download the filtered report as a CSV.
 
 ### Voice Pick
 1. Copy the raw text from the voice pick export.
@@ -112,7 +113,9 @@ The app will open automatically in your browser at `http://localhost:8501`.
 ### Updating the Associate Database
 1. Export the trained-list CSVs for each path you want to update.
 2. Go to **Database Update** and upload the relevant files.
-3. Click **Build Database**, review the preview, then click **Save & Activate**.
+3. Click **Build Database** — metrics and the full associate table appear immediately.
+4. Use the radio filter to switch between **All Associates** and **Multi-path Associates**.
+5. Click **Save & Activate** to write the new database to disk.
 
 ---
 

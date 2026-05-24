@@ -5,7 +5,11 @@ import os
 
 # ── Pick/Reach database ───────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PICK_REACH_PATH = os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+_data_dir = os.environ.get("SHIFT_PLANNER_DATA")
+PICK_REACH_PATH = (
+    os.path.join(_data_dir, "HMW1_Master_Combined_Paths.csv") if _data_dir
+    else os.path.join(BASE_DIR, "..", "..", "HMW1_Master_Combined_Paths.csv")
+)
 
 
 def _find_col(df: pd.DataFrame, candidates: list) -> str | None:
@@ -74,9 +78,6 @@ attendance_cleaned = None
 if attendance_file:
     raw_att = pd.read_csv(attendance_file)
     raw_att.columns = raw_att.columns.str.strip()
-
-    with st.expander("Raw roster columns detected"):
-        st.write(list(raw_att.columns))
 
     alias_col = _find_col(raw_att, ALIAS_CANDS)
     name_col  = _find_col(raw_att, NAME_CANDS)
@@ -191,9 +192,6 @@ if att_with_path is None:
 elif vto_file is not None:
     raw_vto = pd.read_csv(vto_file)
     raw_vto.columns = raw_vto.columns.str.strip()
-
-    with st.expander("Raw VTO columns detected"):
-        st.write(list(raw_vto.columns))
 
     vto_login_col = _find_col(raw_vto, VTO_CANDS)
 
