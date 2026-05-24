@@ -108,24 +108,24 @@ Compares who is physically in the building against who is on the shift schedule.
 
 - Upload the **Time-off-task report** (`timeOffTask-ppr-HMW1-*.csv`) as the in-building source
 - Upload the **Pick Plan CSV** downloaded from Pick Planning as the on-shift source
+- A green confirmation message shows both filenames once loaded — no column-list dropdowns
 - Name matching is case-insensitive and normalised (uppercase, strips spaces around commas)
-- Looks up Login from `HMW1_Master_Combined_Paths.csv` for the "Present – Not on Shift" group
+- Looks up Login from `HMW1_Master_Combined_Paths.csv` for the "Present – Not Scheduled" group
+- All columns cast to plain strings via `_clean()` helper before display to prevent PyArrow serialization errors
 
 **Metrics displayed:**
 | Metric | Description |
 |--------|-------------|
 | **In-House Headcount** | Total unique associates in the timeofftask file |
-| **Absent – On Shift Schedule** | Scheduled but not present in building |
-| **Present – Not on Shift** | In the building but not on the shift schedule |
+| **Absent – Scheduled** | Scheduled but not present in building |
+| **Present – Not Scheduled** | In the building but not on the shift schedule |
 
-**Outputs two groups:**
+**Single table with horizontal radio filter:**
+- **All** — both groups combined
+- **Present – Not Scheduled** — in the building but not scheduled
+- **Absent – Scheduled** — scheduled but not showing in building
 
-- **Present – Not on Shift**: in the building but not scheduled
-- **Absent – On Shift Schedule**: scheduled but not showing in building
-
-- Download reconciliation report as `attendance_reconciliation_YYYY-MM-DD.csv`
-
-> **Bug fix (2026-05-23):** Fixed a PyArrow serialization error in the "All discrepancies" tab caused by a dtype mismatch — `in_building["Login"]` was returning float64 (all NaN) when no DB matches exist, which conflicted with object-type strings from `absent["Login"]`. Fixed by casting both Login columns to `object` dtype before `pd.concat`.
+- Download button exports the currently filtered view as `attendance_reconciliation_YYYY-MM-DD.csv`
 
 ---
 
@@ -172,6 +172,8 @@ Rebuilds `HMW1_Master_Combined_Paths.csv` from individual trained-list CSV expor
 - Each file must have a Name column and a Login column (auto-detected)
 - Merges new uploads with existing database rows — only the uploaded paths are replaced, others are retained
 - Multi-path associates are grouped by Login; their paths are combined into underscore-delimited strings
+- After clicking **Build Database**, metrics and a single associate table are displayed immediately
+- **Horizontal radio filter:** **All Associates** | **Multi-path Associates**
 - **Download** result or **Save & Activate** to write directly to `HMW1_Master_Combined_Paths.csv` and clear the Pick Planning cache
 
 ---
@@ -216,6 +218,9 @@ Note: `script.py` still uses `pick_reach_final.csv` and matches on Names. The St
 | 2026-05-23 | Added Equipment Utilization page — upload equipment utilization CSV, enter equipment numbers, view last operator in card or table format                                                                                                                                 |
 | 2026-05-23 | Database Update moved to last position in sidebar nav                                                                                                                                                                                                                    |
 | 2026-05-23 | Attendance Reconciliation: fixed PyArrow dtype-mismatch error in "All discrepancies" tab; reworked metrics to show In-House Headcount / Absent – On Shift Schedule / Present – Not on Shift; renamed "In Building – Not on Shift" to "Present – Not on Shift" throughout |
+| 2026-05-23 | Attendance Reconciliation: replaced tab layout with single-page display; added horizontal radio filter (All / Present – Not Scheduled / Absent – Scheduled); removed column-list expander dropdowns; replaced with green filename confirmation; download exports filtered view |
+| 2026-05-23 | Pick Planning: removed "Raw roster columns detected" and "Raw VTO columns detected" expander dropdowns |
+| 2026-05-23 | Database Update: replaced tab layout (All employees / Multi-path employees) with single table and horizontal radio filter (All Associates / Multi-path Associates) |
 
 ---
 
