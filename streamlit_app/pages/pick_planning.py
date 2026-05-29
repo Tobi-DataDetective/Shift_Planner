@@ -206,6 +206,7 @@ elif vto_file is not None:
         result = att_with_path.copy()
         result["Alias"] = result["Alias"].astype(str).str.strip().str.lower()
         result = result[~result["Alias"].isin(vto_logins)]
+        result = result.drop_duplicates(subset="Alias", keep="first")
         result = result.sort_values(by="Path").reset_index(drop=True)
 
         final_df = result
@@ -217,7 +218,12 @@ elif vto_file is not None:
 
 else:
     # No VTO file — pass through Section 2 data as-is
-    final_df = att_with_path.sort_values(by="Path").reset_index(drop=True)
+    final_df = (
+        att_with_path
+        .drop_duplicates(subset="Alias", keep="first")
+        .sort_values(by="Path")
+        .reset_index(drop=True)
+    )
     st.info(f"No VTO file uploaded — proceeding with all **{len(final_df)}** associates.")
 
 st.markdown("---")

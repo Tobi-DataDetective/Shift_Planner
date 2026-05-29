@@ -120,7 +120,15 @@ if "vp_df" in st.session_state:
 
     total_col, a75_col, mid_col, b25_col = st.columns(4)
 
-    total_col.metric("Total Associates", len(df))
+    overall_avg = df["realUtilization"].mean()
+    overall_color = "rgb(9,171,59)" if overall_avg >= 70 else "rgb(255,43,43)"
+    total_col.markdown(f"""
+        <div style="line-height:1.6;">
+            <p style="margin:0; font-size:0.875rem; font-weight:700; color:white;">Total Associates</p>
+            <p style="margin:0; font-size:2rem; font-weight:700; color:white;">{len(df)}</p>
+            <p style="margin:0; font-size:0.875rem; color:{overall_color};">Avg {overall_avg:.1f}%</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     def avg_metric(col, title, count, avg, avg_color):
         avg_str = f"Avg {avg:.1f}%" if avg is not None else "—"

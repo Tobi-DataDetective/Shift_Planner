@@ -116,8 +116,10 @@ if pick_plan_login_col:
     attendance_names.rename(columns={pick_plan_login_col: "Login"}, inplace=True)
 attendance_names["_key"] = _norm_name(attendance_names["Names"])
 
-# ── Login lookup from database ────────────────────────────────────────────────
-db_login_map: dict[str, str] = {}
+# ── Combined login lookup: DB first, then pick plan ──────────────────────────
+# timeofftask has no login column, so we pull from every available source.
+login_map: dict[str, str] = {}
+
 try:
     db_df = pd.read_csv(DB_PATH)
     db_df.columns = db_df.columns.str.strip()
@@ -125,13 +127,28 @@ try:
     db_login_col = _find_col(db_df, ["login", "alias", "employee login"])
     if db_name_col and db_login_col:
         db_df["_key"] = _norm_name(db_df[db_name_col])
-        db_login_map = db_df.set_index("_key")[db_login_col].astype(str).to_dict()
+        login_map.update(db_df.set_index("_key")[db_login_col].astype(str).to_dict())
 except FileNotFoundError:
     pass
 
+# Layer the pick plan's Alias column on top for anyone not already in the DB
+if "Login" in attendance_names.columns:
+    pp_map = (
+        attendance_names[["_key", "Login"]]
+        .copy()
+        .assign(Login=lambda d: d["Login"].fillna("").astype(str).str.strip())
+        .query("Login != '' and Login.str.lower() != 'nan'")
+        .drop_duplicates("_key")
+        .set_index("_key")["Login"]
+        .to_dict()
+    )
+    for k, v in pp_map.items():
+        if k not in login_map:
+            login_map[k] = v
+
 # ── Build each group ──────────────────────────────────────────────────────────
 _ib = in_house_names[~in_house_names["_key"].isin(attendance_names["_key"])].copy()
-_ib["Login"]  = _ib["_key"].map(db_login_map).fillna("").astype(str)
+_ib["Login"]  = _ib["_key"].map(login_map).fillna("").astype(str)
 _ib["Status"] = "Present – Not Scheduled"
 in_building = _clean(_ib[["Names", "Login", "Status"]])
 
@@ -139,6 +156,10 @@ _ab = attendance_names[~attendance_names["_key"].isin(in_house_names["_key"])].c
 _ab["Status"] = "Absent – Scheduled"
 if "Login" not in _ab.columns:
     _ab["Login"] = ""
+_ab["Login"] = _ab["Login"].fillna("").astype(str)
+# Fill any blank aliases from the combined map
+_empty = _ab["Login"].str.strip() == ""
+_ab.loc[_empty, "Login"] = _ab.loc[_empty, "_key"].map(login_map).fillna("").astype(str)
 absent = _clean(_ab[["Names", "Login", "Status"]])
 
 all_df = pd.concat([in_building, absent], ignore_index=True)
