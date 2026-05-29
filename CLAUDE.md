@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-A Streamlit web app (and companion Python script) for managing a pick shift at an Amazon warehouse. It processes shift attendance, assigns associates to process paths (CR, Reach, Forks, etc.), removes VTO employees, reconciles in-building headcount, analyzes voice pick utilization, and looks up last operators on warehouse equipment.
+A Streamlit web app (and companion Python script) for managing a pick shift at an Amazon warehouse. It processes shift attendance, assigns associates to process paths (CR, Reach, Forks, etc.), removes VTO employees, reconciles in-building headcount, analyzes voice pick utilization, looks up last operators on warehouse equipment, and filters ExSD reports for Rodeo planning.
 
 ---
 
@@ -24,6 +24,7 @@ Amazon_Pick_Planning/
 │       ├── attendance_recon.py        # Reconcile in-building vs. on-shift headcount
 │       ├── voice_pick.py             # Parse and analyze voice pick utilization data
 │       ├── equipment_utilization.py   # Look up last operator by equipment number
+│       ├── rodeo_planning.py          # Filter ExSD report by Process Path and Work Pool
 │       └── database_update.py        # Rebuild HMW1_Master_Combined_Paths.csv from trained-list exports
 └── Shift_Planner/                     # Git-tracked mirror of the project (has remote on GitHub)
 ```
@@ -35,7 +36,7 @@ cd streamlit_app
 streamlit run app.py
 ```
 
-**Sidebar navigation order:** Pick Planning → Attendance Reconciliation → Voice Pick → Equipment Utilization → Database Update
+**Sidebar navigation order:** Pick Planning → Attendance Reconciliation → Voice Pick → Equipment Utilization → Rodeo Planning → Database Update
 
 ---
 
@@ -49,6 +50,7 @@ streamlit run app.py
 | `timeOffTask-ppr-HMW1-*.csv`                 | Time-off-task report              | Used by Attendance Reconciliation as the in-building headcount source        |
 | `EquipmentUtilizationByLogIn-*.csv`          | Equipment utilization export      | Used by Equipment Utilization page to look up last operators                 |
 | `HMW1 Master Trained List(Center rider).csv` | Trained list exports per path     | Source CSVs uploaded into the Database Update page                           |
+| `ExSDReport-*.csv`                           | ExSD report export                | Used by Rodeo Planning page to filter by Process Path and Work Pool          |
 | `pick_reach_final.csv`                       | Maintained manually               | Legacy path/JPH lookup — used only by `script.py`, not the Streamlit app     |
 
 > **Note:** `Attendance.csv` is no longer used by the Streamlit app. The roster file (`HMW1_roster_*.csv`) is the new attendance source for Pick Planning. Column auto-detection handles both formats for backwards compatibility.
@@ -96,6 +98,7 @@ Three-section workflow that produces the final pick plan.
 
 - Upload `VTO.csv` (optional — skip to keep all associates)
 - Removes associates whose Alias appears in the VTO login column
+- Deduplicates by `Alias` (keeps first occurrence) before final output
 - Sorts final list by Path
 
 **Output:** Download final pick plan as `pick_plan_YYYY-MM-DD.csv` with columns `Alias`, `Names`, `Path`
@@ -136,7 +139,8 @@ Parses raw voice pick export data and reports utilization metrics.
 - Paste raw voice pick text export into the text area and click **Process**
 - Auto-parses line-by-line format (serial, login, warehouse, date, metrics…)
 - Filters to the most recent date in the pasted data
-- Shows summary metrics: total associates, above 75%, 25–74%, below 25% utilization
+- Shows summary metrics: Total Associates (with overall avg utilization, green ≥ 70% / red < 70%), Above 75%, 25–74%, Below 25%
+- Each metric card shows group count and average utilization with colour coding
 - Highlights associates below 70% utilization in a separate table
 - Download full report as `voice_pick_YYYY-MM-DD.csv`
 
@@ -164,7 +168,31 @@ Looks up the last operator for one or more pieces of equipment by number.
 
 ---
 
-### 5. Database Update (`pages/database_update.py`)
+### 5. Rodeo Planning (`pages/rodeo_planning.py`)
+
+Filters an ExSD report by Process Path type and Work Pool status to support Rodeo planning.
+
+- Upload the **ExSD Report** CSV (`ExSDReport-*.csv`)
+- Required columns: `Process Path`, `Work Pool`, `ExSD`, `Quantity`
+- Cleans columns on load (strips whitespace, coerces Quantity to int)
+
+**Process Path filter:**
+- Radio toggle: **Include** or **Exclude**
+- Multi-select keywords: `FPP`, `Frozen`, `Chilled` (substring match against the Process Path column, all selected by default)
+- Include mode: keeps rows whose Process Path contains any selected keyword
+- Exclude mode: removes rows whose Process Path contains any selected keyword
+
+**Work Pool filter:**
+- Multi-select (all selected by default): `PickingNotYetPicked`, `PickingNotYetPickedNotPrioritized`, `PickingPicked`, `Palletized`
+- Both filters apply simultaneously; table updates live
+
+**Metrics displayed:** Rows (filtered) / Total Quantity / Unique Process Paths
+
+- Download filtered result as `rodeo_plan_YYYY-MM-DD.csv` (button disabled when result is empty)
+
+---
+
+### 6. Database Update (`pages/database_update.py`)
 
 Rebuilds `HMW1_Master_Combined_Paths.csv` from individual trained-list CSV exports.
 
@@ -203,6 +231,10 @@ Note: `script.py` still uses `pick_reach_final.csv` and matches on Names. The St
 | `Equipment Name`                     | Equipment Utilization       | Name like `RC1639`; trailing digits are the lookup number |
 | `Logout Date` / `Logout Time`        | Equipment Utilization       | Combined to find the most recent session per equipment    |
 | `realUtilization`                    | Voice Pick                  | Utilization percentage (0–100)                            |
+| `Process Path`                       | Rodeo Planning              | Path string; filtered by FPP/Frozen/Chilled substring match |
+| `Work Pool`                          | Rodeo Planning              | Status value; filtered to 4 specific picking states        |
+| `ExSD`                               | Rodeo Planning              | Expected ship date/time                                   |
+| `Quantity`                           | Rodeo Planning              | Unit quantity per row                                     |
 
 ---
 
@@ -221,6 +253,10 @@ Note: `script.py` still uses `pick_reach_final.csv` and matches on Names. The St
 | 2026-05-23 | Attendance Reconciliation: replaced tab layout with single-page display; added horizontal radio filter (All / Present – Not Scheduled / Absent – Scheduled); removed column-list expander dropdowns; replaced with green filename confirmation; download exports filtered view |
 | 2026-05-23 | Pick Planning: removed "Raw roster columns detected" and "Raw VTO columns detected" expander dropdowns |
 | 2026-05-23 | Database Update: replaced tab layout (All employees / Multi-path employees) with single table and horizontal radio filter (All Associates / Multi-path Associates) |
+| 2026-05-29 | Pick Planning: Final Pick Plan now deduplicates by Alias (keep first) before display and download |
+| 2026-05-29 | Voice Pick: Total Associates metric card now shows overall average utilization beneath the count, coloured green (≥ 70%) or red (< 70%) |
+| 2026-05-29 | Attendance Reconciliation: login lookup now draws from both the DB and the pick plan's Alias column; absent rows with blank Alias fall back to the combined map |
+| 2026-05-29 | Added Rodeo Planning page — upload ExSD Report, filter by Process Path (FPP/Frozen/Chilled, include/exclude) and Work Pool (4 picking states), live table + download |
 
 ---
 

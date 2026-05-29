@@ -4,10 +4,11 @@ A Streamlit web app for managing a pick shift at an Amazon warehouse. It takes a
 
 ## What it does
 
-- **Pick Planning** — uploads the shift roster, filters by shift window, assigns associates to process paths (CR, Reach, Forks, Clamp, EPJ, GTDR) using a master database, and removes VTO employees. Outputs a downloadable pick plan CSV.
-- **Attendance Reconciliation** — compares who is physically in the building (time-off-task report) against who is on the shift schedule. Displays a single combined table with a radio filter to view **All**, **Present – Not Scheduled**, or **Absent – Scheduled** associates.
-- **Voice Pick** — parses raw voice pick export text and reports utilization metrics, highlighting associates below 70%.
+- **Pick Planning** — uploads the shift roster, filters by shift window, assigns associates to process paths (CR, Reach, Forks, Clamp, EPJ, GTDR) using a master database, removes VTO employees, and deduplicates by Alias. Outputs a downloadable pick plan CSV.
+- **Attendance Reconciliation** — compares who is physically in the building (time-off-task report) against who is on the shift schedule. Single table with a radio filter for **All**, **Present – Not Scheduled**, or **Absent – Scheduled**. Login is resolved from both the DB and the pick plan for maximum coverage.
+- **Voice Pick** — parses raw voice pick export text and reports utilization metrics. Total Associates card shows overall average utilization coloured green (≥ 70%) or red (< 70%). Associates below 70% are highlighted in a separate table.
 - **Equipment Utilization** — looks up the last operator for any piece of equipment by its number.
+- **Rodeo Planning** — uploads an ExSD Report and filters it by Process Path (FPP / Frozen / Chilled, include or exclude) and Work Pool status. Live table and download.
 - **Database Update** — rebuilds the master associate database (`HMW1_Master_Combined_Paths.csv`) from per-path trained-list exports. Displays all associates in a single table with a radio filter for **All Associates** or **Multi-path Associates** only.
 
 ## Key files
@@ -109,6 +110,12 @@ The app will open automatically in your browser at `http://localhost:8501`.
 1. Export the equipment utilization CSV (`EquipmentUtilizationByLogIn-*.csv`).
 2. Go to **Equipment Utilization** and upload the file.
 3. Enter one or more equipment numbers to look up the last operator.
+
+### Rodeo Planning
+1. Export the ExSD Report CSV.
+2. Go to **Rodeo Planning** and upload the file.
+3. Use the **Process Path** filter (Include/Exclude toggle + FPP / Frozen / Chilled checkboxes) and the **Work Pool** multi-select to narrow the data.
+4. The table updates live — download the filtered result as a CSV.
 
 ### Updating the Associate Database
 1. Export the trained-list CSVs for each path you want to update.
