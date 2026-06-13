@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-A Streamlit web app (and companion Python script) for managing a pick shift at an Amazon warehouse. It processes shift attendance, assigns associates to process paths (CR, Reach, Forks, etc.), removes VTO employees, reconciles in-building headcount, analyzes voice pick utilization, looks up last operators on warehouse equipment, and filters ExSD reports for Rodeo planning.
+A Streamlit web app (and companion Python script) for managing a pick shift at an Amazon warehouse. It processes shift attendance, assigns associates to process paths (CR, Reach, Forks, etc.), removes VTO employees, reconciles in-building headcount, analyzes voice pick utilization, looks up last operators on warehouse equipment, filters ExSD reports for Rodeo planning, and provides a multi-zone workforce performance analysis tool (Function Rollup).
 
 ---
 
@@ -13,7 +13,7 @@ Amazon_Pick_Planning/
 ├── script.py                          # Standalone Python pipeline (legacy/dev use)
 ├── pick_reach_final.csv               # Legacy path/JPH lookup (used by script.py only)
 ├── HMW1_Master_Combined_Paths.csv     # PRIMARY database — Name, Login, Path
-├── HMW1_roster_YYYYMMDDHHNN_YYYYMMDDHHNN.csv  # Input: roster export (replaces Attendance.csv)
+├── HMW1_roster_YYYYMMDDHHNN_YYYYMMDDHHNN.csv  # Input: roster export
 ├── VTO.csv                            # Input: daily VTO list
 ├── HMW1 Master Trained List(Center rider).csv  # Source file for Database Update page
 ├── streamlit_app/
@@ -25,6 +25,7 @@ Amazon_Pick_Planning/
 │       ├── voice_pick.py             # Parse and analyze voice pick utilization data
 │       ├── equipment_utilization.py   # Look up last operator by equipment number
 │       ├── rodeo_planning.py          # Filter ExSD report by Process Path and Work Pool
+│       ├── function_rollup.py         # Multi-zone workforce JPH/volume analysis with what-if scenarios
 │       └── database_update.py        # Rebuild HMW1_Master_Combined_Paths.csv from trained-list exports
 └── Shift_Planner/                     # Git-tracked mirror of the project (has remote on GitHub)
 ```
@@ -36,7 +37,7 @@ cd streamlit_app
 streamlit run app.py
 ```
 
-**Sidebar navigation order:** Pick Planning → Attendance Reconciliation → Voice Pick → Equipment Utilization → Rodeo Planning → Database Update
+**Sidebar navigation order:** Pick Planning → Attendance Reconciliation → Voice Pick → Equipment Utilization → Rodeo Planning → Function Rollup → Database Update
 
 ---
 
@@ -53,13 +54,11 @@ streamlit run app.py
 | `ExSDReport-*.csv`                           | ExSD report export                | Used by Rodeo Planning page to filter by Process Path and Work Pool          |
 | `pick_reach_final.csv`                       | Maintained manually               | Legacy path/JPH lookup — used only by `script.py`, not the Streamlit app     |
 
-> **Note:** `Attendance.csv` is no longer used by the Streamlit app. The roster file (`HMW1_roster_*.csv`) is the new attendance source for Pick Planning. Column auto-detection handles both formats for backwards compatibility.
+> **Note:** `Attendance.csv` is no longer used by the Streamlit app. The roster file (`HMW1_roster_*.csv`) is the new attendance source for Pick Planning.
 
 ---
 
 ## Primary Database: `HMW1_Master_Combined_Paths.csv`
-
-This is the canonical associate database that all Streamlit pages read from.
 
 | Column  | Description                                                           |
 | ------- | --------------------------------------------------------------------- |
@@ -68,8 +67,6 @@ This is the canonical associate database that all Streamlit pages read from.
 | `Path`  | Underscore-delimited list of certified paths (e.g., `CR_Reach_Forks`) |
 
 **Supported paths (in order):** CR (Center Rider), Reach, Forks, Clamp, EPJ, GTDR
-
-Multi-path associates have all their certified paths stored as a single underscore-joined string. The Database Update page rebuilds this file by merging per-path trained-list exports.
 
 ---
 
@@ -81,140 +78,227 @@ Three-section workflow that produces the final pick plan.
 
 **Section 1 — Roster / Attendance**
 
-- Upload the **roster file** (`HMW1_roster_*.csv`) — replaces the old `Attendance.csv` upload
+- Upload the **roster file** (`HMW1_roster_*.csv`)
 - Expected columns: `Employee Login`, `Employee Name`, `Schedule Start Time` (format: `May 17 18:30`)
 - Configure shift time window (default 18:30–23:00)
-- Auto-detects column names — `SHIFT_CANDS` includes `"schedule start time"` for the roster format
-- Datetime parsing: tries `%b %d %H:%M` first (roster format), falls back to generic ISO parsing for older exports
+- Datetime parsing: tries `%b %d %H:%M` first, falls back to ISO
 - Deduplicates by name (earliest shift wins)
 
 **Section 2 — Pick / Reach Assignment**
 
 - Merges cleaned attendance with `HMW1_Master_Combined_Paths.csv`
-- Matches on **Login/Alias** (case-insensitive) — not on Name
+- Matches on **Login/Alias** (case-insensitive)
 - Flags unmatched associates (Path will be blank)
 
 **Section 3 — Remove VTO**
 
-- Upload `VTO.csv` (optional — skip to keep all associates)
+- Upload `VTO.csv` (optional)
 - Removes associates whose Alias appears in the VTO login column
-- Deduplicates by `Alias` (keeps first occurrence) before final output
+- Deduplicates by `Alias` before final output
 - Sorts final list by Path
 
-**Output:** Download final pick plan as `pick_plan_YYYY-MM-DD.csv` with columns `Alias`, `Names`, `Path`
+**Output:** Download `pick_plan_YYYY-MM-DD.csv` with columns `Alias`, `Names`, `Path`
 
 ---
 
 ### 2. Attendance Reconciliation (`pages/attendance_recon.py`)
 
-Compares who is physically in the building against who is on the shift schedule.
+- Upload **Time-off-task report** and **Pick Plan CSV**
+- Name matching: case-insensitive, normalised uppercase, strips spaces around commas
+- Looks up Login from `HMW1_Master_Combined_Paths.csv` for "Present – Not Scheduled" group
 
-- Upload the **Time-off-task report** (`timeOffTask-ppr-HMW1-*.csv`) as the in-building source
-- Upload the **Pick Plan CSV** downloaded from Pick Planning as the on-shift source
-- A green confirmation message shows both filenames once loaded — no column-list dropdowns
-- Name matching is case-insensitive and normalised (uppercase, strips spaces around commas)
-- Looks up Login from `HMW1_Master_Combined_Paths.csv` for the "Present – Not Scheduled" group
-- All columns cast to plain strings via `_clean()` helper before display to prevent PyArrow serialization errors
-
-**Metrics displayed:**
+**Metrics:**
 | Metric | Description |
 |--------|-------------|
-| **In-House Headcount** | Total unique associates in the timeofftask file |
-| **Absent – Scheduled** | Scheduled but not present in building |
-| **Present – Not Scheduled** | In the building but not on the shift schedule |
+| In-House Headcount | Total unique associates in the timeofftask file |
+| Absent – Scheduled | Scheduled but not present |
+| Present – Not Scheduled | In building but not on schedule |
 
-**Single table with horizontal radio filter:**
-- **All** — both groups combined
-- **Present – Not Scheduled** — in the building but not scheduled
-- **Absent – Scheduled** — scheduled but not showing in building
-
-- Download button exports the currently filtered view as `attendance_reconciliation_YYYY-MM-DD.csv`
+- Horizontal radio filter: All / Present – Not Scheduled / Absent – Scheduled
+- Download exports currently filtered view
 
 ---
 
 ### 3. Voice Pick (`pages/voice_pick.py`)
 
-Parses raw voice pick export data and reports utilization metrics.
-
-- Paste raw voice pick text export into the text area and click **Process**
-- Auto-parses line-by-line format (serial, login, warehouse, date, metrics…)
-- Filters to the most recent date in the pasted data
-- Shows summary metrics: Total Associates (with overall avg utilization, green ≥ 70% / red < 70%), Above 75%, 25–74%, Below 25%
-- Each metric card shows group count and average utilization with colour coding
-- Highlights associates below 70% utilization in a separate table
-- Download full report as `voice_pick_YYYY-MM-DD.csv`
-
-**Voice pick columns parsed:** `login_name`, `warehouse_id`, `date`, `utteringPromptCount`, `CorrectCheckDigitCount`, `scanBinCount`, `checkDigitPullCount`, `realUtilization`
+- Paste raw voice pick export text, click **Process**
+- Filters to most recent date in the data
+- Summary metrics: Total Associates (overall avg utilization, green ≥ 70% / red < 70%), Above 75%, 25–74%, Below 25%
+- Associates below 70% highlighted in a separate table
+- Download `voice_pick_YYYY-MM-DD.csv`
 
 ---
 
 ### 4. Equipment Utilization (`pages/equipment_utilization.py`)
 
-Looks up the last operator for one or more pieces of equipment by number.
-
-- Upload the **Equipment Utilization by Login** CSV (`EquipmentUtilizationByLogIn-*.csv`)
-- Enter one or more equipment numbers (the trailing digits of the Equipment Name, e.g. `1639` for `RC1639`)
-- Multiple numbers accepted — separate by comma, space, or newline
-- Results update dynamically as numbers are entered
-- Equipment number is extracted via regex `(\d+)$` on the `Equipment Name` column
-- Most recent session is determined by combining `Logout Date` + `Logout Time` into a single datetime
-
-**Display modes:**
-
-- **Cards** (default) — one bordered card per equipment showing: Equipment Name, Last Operator, Role, Logout Date, Logout Time, Logout Reason, System vs Manual logout badge
-- **Table** — all results in a single sortable dataframe
-
-**Equipment Utilization CSV columns used:** `Operator`, `Equipment Role`, `Equipment Name`, `Logout Date`, `Logout Time`, `System Logout`, `Logout Reason`
+- Upload **Equipment Utilization by Login** CSV
+- Enter one or more equipment numbers (trailing digits of Equipment Name)
+- Equipment number extracted via regex `(\d+)$`
+- Most recent session determined by `Logout Date` + `Logout Time` combined datetime
+- Display modes: **Cards** (default) or **Table**
 
 ---
 
 ### 5. Rodeo Planning (`pages/rodeo_planning.py`)
 
-Filters an ExSD report by Process Path type and Work Pool status to support Rodeo planning.
-
-- Upload the **ExSD Report** CSV (`ExSDReport-*.csv`)
-- Required columns: `Process Path`, `Work Pool`, `ExSD`, `Quantity`
-- Cleans columns on load (strips whitespace, coerces Quantity to int)
-
-**Process Path filter:**
-- Radio toggle: **Include** or **Exclude**
-- Multi-select keywords: `FPP`, `Frozen`, `Chilled` (substring match against the Process Path column, all selected by default)
-- Include mode: keeps rows whose Process Path contains any selected keyword
-- Exclude mode: removes rows whose Process Path contains any selected keyword
-
-**Work Pool filter:**
-- Multi-select (all selected by default): `PickingNotYetPicked`, `PickingNotYetPickedNotPrioritized`, `PickingPicked`, `Palletized`
-- Both filters apply simultaneously; table updates live
-
-**Metrics displayed:** Rows (filtered) / Total Quantity / Unique Process Paths
-
-- Download filtered result as `rodeo_plan_YYYY-MM-DD.csv` (button disabled when result is empty)
+- Upload **ExSD Report** CSV
+- Process Path filter: Include/Exclude toggle + FPP / Frozen / Chilled substring keywords
+- Work Pool filter: multi-select (PickingNotYetPicked, PickingNotYetPickedNotPrioritized, PickingPicked, Palletized)
+- Metrics: Rows / Total Quantity / Unique Process Paths
+- Download filtered result as `rodeo_plan_YYYY-MM-DD.csv`
 
 ---
 
-### 6. Database Update (`pages/database_update.py`)
+### 6. Function Rollup (`pages/function_rollup.py`)
+
+A multi-zone workforce performance analysis tool. Designed for analyzing JPH (Jobs Per Hour) and volume across temp zones (Ambient, Chiller, Frozen) with interactive what-if scenarios.
+
+#### Data Entry Flow
+
+1. **Paste** tab-separated raw data (no header row required) into the text area
+2. **Label** the temp zone (e.g. `Ambient`, `Chiller`, `Frozen`)
+3. Click **Process** — parses the data and shows a 5-row column preview
+4. **Map Columns** — five dropdowns to identify which column contains each field:
+   - **Login** (default col9) — unique associate login ID; used for deduplication
+   - **Level** (default col7) — performance/experience level (e.g. Level 1, Level 5)
+   - **Jobs** (default col15) — total units picked
+   - **JPH** (default col16) — pasted jobs-per-hour rate from the source report
+   - **Hours/Time** (default col14) — total hours worked in the period
+5. Click **Run Analysis** — commits the zone; input area resets for the next paste
+6. Repeat for each additional temp zone
+
+Multiple zones accumulate on the page. A **Clear All Results** button resets everything.
+
+#### Individual Zone Analysis
+
+For each committed zone the following are calculated using the **pasted JPH** value:
+
+| Metric | Calculation |
+|--------|-------------|
+| Total Associates | `COUNT(rows)` — one row per associate |
+| Total Jobs | `SUM(jobs column)` |
+| Total Hours | `SUM(hours column)` |
+| Overall Avg JPH | `MEAN(pasted JPH column)` across all associates |
+| % of Workforce (per level) | `COUNT(associates in level) / COUNT(all associates) × 100` |
+| Total Jobs (per level) | `SUM(jobs)` for associates in that level |
+| Total Hours (per level) | `SUM(hours)` for associates in that level |
+| Avg JPH (per level) | `MEAN(pasted JPH)` for associates in that level |
+
+A TOTAL row at the bottom summarises across all levels.
+
+**Download All Zones (CSV)** exports all zone summaries combined with a leading "Temp Zone" column.
+
+---
+
+#### Overall Analysis (View Overall button)
+
+Triggered after at least one zone is committed. Combines all zone raw data and deduplicates by associate login.
+
+**Deduplication logic (per associate login):**
+
+| Field | Method |
+|-------|--------|
+| Level | Mode (most frequent level across zones for that login) |
+| Jobs | `SUM` across all zones |
+| Hours | `SUM` across all zones |
+| JPH | **Computed** as `total_jobs ÷ total_hours` — NOT the pasted JPH value |
+
+> This is the key distinction: individual zone analyses use the pasted JPH; the Overall uses a computed rate from the deduplicated totals. This ensures that an associate working across two zones is represented by a single accurate rate based on their combined output and time.
+
+Overall summary columns: Level, Associates (unique logins), % of Workforce, Total Jobs, Total Hours, Avg JPH
+
+---
+
+#### What If Scenario 1: Remove Level
+
+Excludes all associates at the selected level from the overall dataset.
+
+- Dropdown populated from levels present in the deduplicated data, sorted numerically
+- Recalculates: Associates, Total Jobs, Total Hours, Avg JPH
+- Delta metrics show how many were removed and the JPH impact vs actual overall
+
+---
+
+#### What If Scenario 2: Target JPH
+
+Models what the overall average would be if N associates in a selected level worked at a hypothetical JPH rate.
+
+- **Level dropdown** — choose which level to target
+- **Slider (0 → count in level)** — how many associates in that level hit the target; starts at 0 (no change)
+- **Target JPH number input** — defaults to that level's current average; adjustable
+- **Logic:** sorts that level's associates by actual JPH ascending, replaces the bottom N values with the target JPH (simulating the lowest-performing associates improving), keeps all other associates unchanged, recomputes the overall summary
+
+---
+
+#### What If Scenario 3: JPH Threshold
+
+Identifies and removes associates performing at or below a chosen JPH ceiling.
+
+- **Slider (0–75 JPH)** — drag to set the threshold
+- Associates with `JPH ≤ threshold` are flagged and excluded
+- An info banner reports exactly how many associates would be removed
+- Recalculates: Associates, Total Jobs, Total Hours, Avg JPH for the remaining group
+- Delta metrics show the removed count and JPH impact
+
+---
+
+#### What If Scenario 4: Best Zone Projection
+
+For each associate, identifies the temp zone where they performed best (highest effective JPH), then projects what the overall numbers would be if every associate worked all their hours in that zone.
+
+**Step 1 — Per-associate, per-zone effective JPH:**
+```
+effective_jph = SUM(jobs in that zone) / SUM(hours in that zone)
+```
+This uses computed rates (not pasted JPH) for a fair cross-zone comparison.
+
+**Step 2 — Best zone per associate:**
+```
+best_zone = zone with highest effective_jph for that login
+```
+
+**Step 3 — Associate totals:**
+```
+actual_jph  = total_jobs_across_all_zones / total_hours_across_all_zones
+jph_gain    = best_zone_jph - actual_jph
+```
+
+**Step 4 — Projection:**
+```
+projected_jobs = total_hours × best_zone_jph
+```
+Associates already in their best zone have `jph_gain = 0`.
+
+**Displayed outputs:**
+- 4 top-line metrics: Associates, Projected Total Jobs (with delta vs actual), Total Hours (unchanged), Projected Avg JPH (with delta)
+- Level breakdown table using projected values
+- **Associate Best-Zone Detail** table sorted by JPH Gain descending, showing: Login, Level, Zones Worked, Best Zone (Place Here), Actual JPH, Best Zone JPH, JPH Gain, Projected Jobs
+
+---
+
+#### Selection Impact (interactive row selection)
+
+The Associate Best-Zone Detail table supports **multi-row selection** (click to select, click again to deselect; requires Streamlit ≥ 1.35).
+
+When one or more rows are selected:
+- A preview table shows the selected associates: Login, Level, Best Zone (Place Here), Actual JPH, Best Zone JPH, JPH Gain
+- **Impact calculation:** Takes the full deduplicated overall dataset; for each selected associate only, replaces their `jph` with `best_jph` and their `jobs` with `projected_jobs`; all non-selected associates remain at their actual values
+- Recalculates: Associates Reallocated, new Total Jobs (delta vs overall), Total Hours, new Avg JPH (delta vs overall)
+- Level breakdown table for the mixed scenario
+
+This allows targeted what-if analysis: "what if I moved just these 3 specific associates to their best zones?"
+
+---
+
+### 7. Database Update (`pages/database_update.py`)
 
 Rebuilds `HMW1_Master_Combined_Paths.csv` from individual trained-list CSV exports.
 
-- Upload one or more trained-list CSVs, one per path (CR, Reach, Forks, Clamp, EPJ, GTDR)
-- Each file must have a Name column and a Login column (auto-detected)
-- Merges new uploads with existing database rows — only the uploaded paths are replaced, others are retained
-- Multi-path associates are grouped by Login; their paths are combined into underscore-delimited strings
-- After clicking **Build Database**, metrics and a single associate table are displayed immediately
-- **Horizontal radio filter:** **All Associates** | **Multi-path Associates**
-- **Download** result or **Save & Activate** to write directly to `HMW1_Master_Combined_Paths.csv` and clear the Pick Planning cache
-
----
-
-## Script Structure (`script.py` — legacy/dev)
-
-A standalone pandas script that replicates the Pick Planning workflow without a UI. Reads/writes local CSVs directly.
-
-- **Section 1** — Load `Attendance.csv`, keep Alias/Name/Shift Start, filter 18:30–23:00, deduplicate by name, save `attendance_cleaned.csv`
-- **Section 2** — Left-join with `pick_reach_final.csv` on Names (not Login), keep Alias/Names/Path/JPH, save `attendance_with_pick_reach.csv`
-- **Section 3** — Remove VTO aliases, sort by Path, save `attendance_without_vto.csv`
-
-Note: `script.py` still uses `pick_reach_final.csv` and matches on Names. The Streamlit app uses `HMW1_Master_Combined_Paths.csv` and matches on Login. The legacy commented-out code block at the top of `script.py` (pre-Alias version) can be deleted.
+- Upload one or more trained-list CSVs per path
+- Merges new uploads with existing database — only uploaded paths are replaced
+- Multi-path associates grouped by Login; paths combined into underscore-delimited strings
+- Horizontal radio filter: **All Associates** | **Multi-path Associates**
+- **Download** or **Save & Activate** to write to disk and clear Pick Planning cache
 
 ---
 
@@ -223,50 +307,52 @@ Note: `script.py` still uses `pick_reach_final.csv` and matches on Names. The St
 | Column                               | Used In                     | Description                                               |
 | ------------------------------------ | --------------------------- | --------------------------------------------------------- |
 | `Alias` / `Login` / `Employee Login` | Roster, VTO, DB             | Employee login ID — primary key for matching              |
-| `Names` / `Name` / `Employee Name`   | Roster, DB, timeofftask     | Full name (format: `"Last,First"` — no space after comma) |
+| `Names` / `Name` / `Employee Name`   | Roster, DB, timeofftask     | Full name (`"Last,First"` — no space after comma)         |
 | `Path`                               | DB, outputs                 | Underscore-joined certified paths (e.g., `CR_Reach`)      |
-| `JPH`                                | `pick_reach_final.csv` only | Jobs per hour rate (legacy, not in new DB)                |
 | `Schedule Start Time`                | Roster file                 | Format `"May 17 18:30"` — parsed with `%b %d %H:%M`       |
-| `Employee Login`                     | `VTO.csv`                   | Login column used for VTO exclusion matching              |
 | `Equipment Name`                     | Equipment Utilization       | Name like `RC1639`; trailing digits are the lookup number |
 | `Logout Date` / `Logout Time`        | Equipment Utilization       | Combined to find the most recent session per equipment    |
 | `realUtilization`                    | Voice Pick                  | Utilization percentage (0–100)                            |
-| `Process Path`                       | Rodeo Planning              | Path string; filtered by FPP/Frozen/Chilled substring match |
+| `Process Path`                       | Rodeo Planning              | Filtered by FPP/Frozen/Chilled substring match            |
 | `Work Pool`                          | Rodeo Planning              | Status value; filtered to 4 specific picking states        |
-| `ExSD`                               | Rodeo Planning              | Expected ship date/time                                   |
 | `Quantity`                           | Rodeo Planning              | Unit quantity per row                                     |
+
+**Function Rollup column defaults (0-indexed position in raw pasted data):**
+
+| Selector | Default Column | Typical Content |
+|----------|---------------|-----------------|
+| Login | col9 (index 8) | Associate login/alias |
+| Level | col7 (index 6) | Performance level (Level 1 – Level 5) |
+| Jobs | col15 (index 14) | Total units picked |
+| JPH | col16 (index 15) | Jobs per hour rate |
+| Hours/Time | col14 (index 13) | Total hours worked |
 
 ---
 
 ## Change Log
 
-| Date       | Change                                                                                                                                                                                                                                                                   |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2026-05-16 | Initial project setup; `script.py` has all 3 sections working end-to-end                                                                                                                                                                                                 |
-| 2026-05-16 | Created `streamlit_app/` folder with full single-page Streamlit app (`app.py` + `requirements.txt`)                                                                                                                                                                      |
-| 2026-05-16 | Restructured to multi-page app: `app.py` is now the nav entry point; each page lives in `streamlit_app/pages/`                                                                                                                                                           |
-| 2026-05-17 | Added Attendance Reconciliation, Voice Pick, and Database Update pages; switched primary DB to `HMW1_Master_Combined_Paths.csv`; matching now done by Login (not Name)                                                                                                   |
-| 2026-05-23 | Pick Planning Section 1 rewritten to accept roster file (`HMW1_roster_*.csv`) instead of `Attendance.csv`; added `"schedule start time"` to column candidates; datetime parsing now handles `"May 17 18:30"` format with ISO fallback                                    |
-| 2026-05-23 | Added Equipment Utilization page — upload equipment utilization CSV, enter equipment numbers, view last operator in card or table format                                                                                                                                 |
-| 2026-05-23 | Database Update moved to last position in sidebar nav                                                                                                                                                                                                                    |
-| 2026-05-23 | Attendance Reconciliation: fixed PyArrow dtype-mismatch error in "All discrepancies" tab; reworked metrics to show In-House Headcount / Absent – On Shift Schedule / Present – Not on Shift; renamed "In Building – Not on Shift" to "Present – Not on Shift" throughout |
-| 2026-05-23 | Attendance Reconciliation: replaced tab layout with single-page display; added horizontal radio filter (All / Present – Not Scheduled / Absent – Scheduled); removed column-list expander dropdowns; replaced with green filename confirmation; download exports filtered view |
-| 2026-05-23 | Pick Planning: removed "Raw roster columns detected" and "Raw VTO columns detected" expander dropdowns |
-| 2026-05-23 | Database Update: replaced tab layout (All employees / Multi-path employees) with single table and horizontal radio filter (All Associates / Multi-path Associates) |
-| 2026-05-29 | Pick Planning: Final Pick Plan now deduplicates by Alias (keep first) before display and download |
-| 2026-05-29 | Voice Pick: Total Associates metric card now shows overall average utilization beneath the count, coloured green (≥ 70%) or red (< 70%) |
-| 2026-05-29 | Attendance Reconciliation: login lookup now draws from both the DB and the pick plan's Alias column; absent rows with blank Alias fall back to the combined map |
-| 2026-05-29 | Added Rodeo Planning page — upload ExSD Report, filter by Process Path (FPP/Frozen/Chilled, include/exclude) and Work Pool (4 picking states), live table + download |
+| Date       | Change |
+| ---------- | ------ |
+| 2026-05-16 | Initial project setup; `script.py` working end-to-end |
+| 2026-05-16 | Created `streamlit_app/` with full single-page Streamlit app |
+| 2026-05-16 | Restructured to multi-page app; each page in `streamlit_app/pages/` |
+| 2026-05-17 | Added Attendance Reconciliation, Voice Pick, and Database Update pages; switched primary DB to `HMW1_Master_Combined_Paths.csv`; matching by Login |
+| 2026-05-23 | Pick Planning rewritten to accept roster file; Equipment Utilization page added |
+| 2026-05-23 | Attendance Reconciliation reworked: single table + horizontal radio filter; PyArrow fix |
+| 2026-05-29 | Pick Planning: final plan deduplicates by Alias; Voice Pick: avg utilization on metric card |
+| 2026-05-29 | Added Rodeo Planning page |
+| 2026-06-13 | Added Function Rollup page (`pages/function_rollup.py`) — multi-zone JPH/volume analysis with 4 what-if scenarios and interactive associate selection |
+| 2026-06-13 | Sidebar reordered: Function Rollup inserted before Database Update; Database Update is now last |
 
 ---
 
 ## Notes / Known Issues
 
 - **Primary DB is `HMW1_Master_Combined_Paths.csv`** — `pick_reach_final.csv` is only used by `script.py` and should be considered legacy
-- **Roster file replaces `Attendance.csv`** — Pick Planning Section 1 now expects `HMW1_roster_*.csv`; the column auto-detection still handles both formats for backwards compatibility
-- The Streamlit app matches associates by **Login/Alias** (case-insensitive). `script.py` still matches by **Name** — keep this distinction in mind when debugging mismatches
-- Name format from the roster and timeofftask files is `"Last,First"` (no space after comma) — the `_norm_name` function normalises both `"Last,First"` and `"Last, First"` to `"LAST,FIRST"` for matching
-- `pick_reach_final.csv` has a `JPH` column that the new database does not — JPH is not currently surfaced in the Streamlit app
-- The `Shift_Planner/` subdirectory is a git-tracked mirror of the project with a GitHub remote — edits should be made in the root directory and synced there
-- The Database Update page reads the existing DB to retain paths not being replaced; always verify the retained-path list shown before clicking Save & Activate
-- Equipment numbers are extracted from the `Equipment Name` column using the trailing-digit regex `(\d+)$` — e.g. `RC1639` → `1639`, `Rental PC2865` → `2865`
+- **Roster file replaces `Attendance.csv`** — column auto-detection still handles both formats
+- The Streamlit app matches associates by **Login/Alias** (case-insensitive); `script.py` still matches by Name
+- Name format is `"Last,First"` (no space after comma) — `_norm_name` normalises both forms to `"LAST,FIRST"` for matching
+- **Function Rollup requires Streamlit ≥ 1.35** for the multi-row selection feature on the Associate Best-Zone Detail table; on older versions the table renders but row selection will not work
+- **Function Rollup JPH distinction:** individual zone Avg JPH = mean of the pasted JPH column; Overall Avg JPH = mean of (total_jobs ÷ total_hours) per associate after deduplication — these will differ slightly and that is intentional
+- Equipment numbers extracted from `Equipment Name` via trailing-digit regex `(\d+)$` — e.g. `RC1639` → `1639`
+- The `Shift_Planner/` subdirectory is a git-tracked mirror with a GitHub remote — edits should be made in the root directory and synced
