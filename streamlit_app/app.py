@@ -10,5 +10,5 @@ rodeo_planning        = st.Page("pages/rodeo_planning.py",        title="Rodeo P
 database_update       = st.Page("pages/database_update.py",       title="Database Update")
 function_rollup       = st.Page("pages/function_rollup.py",       title="Function Rollup")
 
-pg = st.navigation([pick_planning, attendance_recon, voice_pick, equipment_utilization, rodeo_planning, database_update, function_rollup])
+pg = st.navigation([pick_planning, attendance_recon, voice_pick, equipment_utilization, rodeo_planning, function_rollup, database_update])
 pg.run()
