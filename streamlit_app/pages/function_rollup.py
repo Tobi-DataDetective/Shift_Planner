@@ -530,6 +530,76 @@ if st.session_state["fr_zones"]:
 
             render_summary_table(build_summary(impact_df))
 
+        # ── Scenario 5: Remove Individual Associates ──────────────────────────
+        st.markdown("---")
+        st.markdown("#### What If Scenario 5: Remove Individual Associates")
+        st.caption(
+            "Click one or more associates in the table below to remove them. "
+            "The overall numbers are recalculated without those associates."
+        )
+
+        assoc_table = (
+            deduped[["login", "level", "jph", "jobs", "hours"]]
+            .sort_values(["level", "login"])
+            .reset_index(drop=True)
+            .rename(columns={
+                "login":  "Login",
+                "level":  "Level",
+                "jph":    "JPH",
+                "jobs":   "Total Jobs",
+                "hours":  "Total Hours",
+            })
+        )
+
+        s5_sel = st.dataframe(
+            assoc_table.style.format({
+                "JPH":         "{:.2f}",
+                "Total Jobs":  "{:,}",
+                "Total Hours": "{:,.2f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="s5_assoc_selection",
+        )
+
+        s5_rows = s5_sel.selection.rows
+
+        st.markdown("**Adjusted Results**")
+        if not s5_rows:
+            st.info("Click one or more associates in the table above to see the adjusted numbers.")
+        else:
+            removed_logins = assoc_table.iloc[s5_rows]["Login"].tolist()
+            removed_count  = len(removed_logins)
+
+            st.caption(
+                f"Removing **{removed_count} associate{'s' if removed_count != 1 else ''}**: "
+                + ", ".join(removed_logins)
+            )
+
+            s5_df = deduped[~deduped["login"].isin(removed_logins)].copy()
+
+            if s5_df.empty:
+                st.warning("No associates remain after removing the selection.")
+            else:
+                s5_assoc = s5_df["login"].nunique()
+                s5_jobs  = int(s5_df["jobs"].sum())
+                s5_hours = round(float(s5_df["hours"].sum()), 2)
+                s5_avg   = s5_df["jph"].mean()
+
+                w1, w2, w3, w4 = st.columns(4)
+                w1.metric("Associates Remaining", s5_assoc,
+                          delta=f"-{removed_count} removed", delta_color="off")
+                w2.metric("Total Jobs", f"{s5_jobs:,}",
+                          delta=f"-{oa_jobs - s5_jobs:,}", delta_color="off")
+                w3.metric("Total Hours", f"{s5_hours:,.2f}",
+                          delta=f"-{oa_hours - s5_hours:,.2f}", delta_color="off")
+                w4.metric("Avg JPH (adjusted)", f"{s5_avg:.2f}",
+                          delta=f"{s5_avg - oa_avg:+.2f} vs overall", delta_color="normal")
+
+                render_summary_table(build_summary(s5_df))
+
     # ── Clear all ─────────────────────────────────────────────────────────────
     st.markdown("---")
     if st.button("Clear All Results", key="btn_clear_all"):

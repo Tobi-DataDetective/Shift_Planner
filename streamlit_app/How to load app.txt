@@ -1,0 +1,17 @@
+1. Unzip the file in the desired location
+2. Navigate to ShiftPlanner/ShiftPlanner/
+3. Double-click `ShiftPlanner.exe` — the browser will open automatically
+
+```
+ShiftPlanner/
+├── ShiftPlanner.exe          ← launch this
+└── data/
+    └── HMW1_Master_Combined_Paths.csv (Database file used)
+    └── Paths (Files used to generate the database)
+          └── HMW1 Master Trained List(Center rider).csv
+          └──HMW1 Master Trained List(Clamp).csv
+          └──HMW1 Master Trained List(EPJ).csv
+          └──HMW1 Master Trained List(Fork).csv
+          └──HMW1 Master Trained List(GTDR).csv
+          └──HMW1 Master Trained List(Reach).csv
+```
